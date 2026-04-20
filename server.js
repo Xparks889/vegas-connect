@@ -1,5 +1,5 @@
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
+const Database = require("better-sqlite3");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const path = require("path");
@@ -33,15 +33,18 @@ async function sendTelegram(message){
 }
 
 /* ================= DATABASE ================= */
-const db = new sqlite3.Database("database.db");
+const db = new Database("database.db");
 
 /* ================= TABLES ================= */
-db.run(`CREATE TABLE IF NOT EXISTS stock (
+db.prepare(`
+CREATE TABLE IF NOT EXISTS stock (
     id INTEGER PRIMARY KEY,
     quantity INTEGER
-)`);
+)
+`).run();
 
-db.run(`CREATE TABLE IF NOT EXISTS orders (
+db.prepare(`
+CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     phone TEXT,
@@ -50,26 +53,27 @@ db.run(`CREATE TABLE IF NOT EXISTS orders (
     total INTEGER,
     deposit INTEGER,
     mpesa_code TEXT
-)`);
+)
+`).run();
 
-db.run(`CREATE TABLE IF NOT EXISTS notifications (
+db.prepare(`
+CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     phone TEXT
-)`);
+)
+`).run();
 
 /* ================= INIT STOCK ================= */
-db.get("SELECT * FROM stock WHERE id=1", (err, row) => {
-    if (!row) {
-        db.run("INSERT INTO stock (id, quantity) VALUES (1, 100)");
-    }
-});
+const stockRow = db.prepare("SELECT * FROM stock WHERE id=1").get();
+if (!stockRow) {
+    db.prepare("INSERT INTO stock (id, quantity) VALUES (1, 100)").run();
+}
 
 /* ================= STOCK ================= */
 app.get("/stock", (req, res) => {
-    db.get("SELECT quantity FROM stock WHERE id=1", (err, row) => {
-        res.json(row || { quantity: 0 });
-    });
+    const row = db.prepare("SELECT quantity FROM stock WHERE id=1").get();
+    res.json(row || { quantity: 0 });
 });
 
 /* ================= ORDER ================= */
@@ -81,28 +85,26 @@ app.post("/order", (req, res) => {
         return res.json({ success:false, message:"Fill all details" });
     }
 
-    db.get("SELECT quantity FROM stock WHERE id=1", (err, row) => {
+    const row = db.prepare("SELECT quantity FROM stock WHERE id=1").get();
+    let stock = row ? row.quantity : 0;
+    let qty = Number(quantity);
 
-        let stock = row ? row.quantity : 0;
-        let qty = Number(quantity);
+    if (stock <= 0) {
+        return res.json({ success: false, message: "Out of stock" });
+    }
 
-        if (stock <= 0) {
-            return res.json({ success: false, message: "Out of stock" });
-        }
+    if (stock < qty) {
+        return res.json({ success: false, message: "Not enough stock" });
+    }
 
-        if (stock < qty) {
-            return res.json({ success: false, message: "Not enough stock" });
-        }
+    db.prepare(`
+        INSERT INTO orders (name, phone, location, quantity, total, deposit, mpesa_code)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(name, phone, location, qty, total, deposit, mpesa_code);
 
-        db.run(
-            `INSERT INTO orders (name, phone, location, quantity, total, deposit, mpesa_code)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [name, phone, location, qty, total, deposit, mpesa_code]
-        );
+    db.prepare("UPDATE stock SET quantity = quantity - ? WHERE id=1").run(qty);
 
-        db.run("UPDATE stock SET quantity = quantity - ? WHERE id=1", [qty]);
-
-        sendTelegram(
+    sendTelegram(
 `🛒 NEW ORDER
 
 Name: ${name}
@@ -114,10 +116,9 @@ Deposit: ${deposit}
 Code: ${mpesa_code}
 
 🌐 Site: https://YOUR-RENDER-LINK.onrender.com`
-        );
+    );
 
-        res.json({ success: true });
-    });
+    res.json({ success: true });
 });
 
 /* ================= NOTIFY ================= */
@@ -129,12 +130,10 @@ app.post("/notify", (req, res) => {
         return res.json({ success:false });
     }
 
-    db.run(
-        "INSERT INTO notifications (name, phone) VALUES (?, ?)",
-        [name, phone]
-    );
+    db.prepare(
+        "INSERT INTO notifications (name, phone) VALUES (?, ?)"
+    ).run(name, phone);
 
-    /* FIXED TELEGRAM MESSAGE */
     sendTelegram(
 `🔔 NEW NOTIFY REQUEST
 
@@ -155,15 +154,13 @@ app.get("/admin", (req, res) => {
 
 /* ================= ADMIN DATA ================= */
 app.get("/admin/orders", (req, res) => {
-    db.all("SELECT * FROM orders ORDER BY id DESC", (err, rows) => {
-        res.json(rows || []);
-    });
+    const rows = db.prepare("SELECT * FROM orders ORDER BY id DESC").all();
+    res.json(rows || []);
 });
 
 app.get("/admin/notifications", (req, res) => {
-    db.all("SELECT * FROM notifications ORDER BY id DESC", (err, rows) => {
-        res.json(rows || []);
-    });
+    const rows = db.prepare("SELECT * FROM notifications ORDER BY id DESC").all();
+    res.json(rows || []);
 });
 
 /* ================= RESTOCK ================= */
@@ -171,14 +168,14 @@ app.post("/restock", (req, res) => {
 
     const { quantity } = req.body;
 
-    db.run("UPDATE stock SET quantity = ? WHERE id=1", [quantity]);
+    db.prepare("UPDATE stock SET quantity = ? WHERE id=1").run(quantity);
 
     sendTelegram(`📦 STOCK UPDATED → New Stock: ${quantity}`);
 
     res.json({ success: true });
 });
 
-/* ================= START (RENDER FIX) ================= */
+/* ================= START ================= */
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, "0.0.0.0", () => {
