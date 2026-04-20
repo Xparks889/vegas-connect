@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Thank You</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+    font-family: Arial;
+    background:#0f0f0f;
+    color:white;
+    text-align:center;
+}
+
+.card{
+    background:#1e1e1e;
+    padding:20px;
+    margin:20px auto;
+    max-width:400px;
+    border-radius:12px;
+}
+
+input, button{
+    width:100%;
+    padding:12px;
+    margin:6px 0;
+    border-radius:8px;
+    border:none;
+}
+
+.primary{
+    background:linear-gradient(90deg,#ff2d2d,#ff7a00);
+    color:white;
+    font-weight:bold;
+}
+
+.wa{
+    background:#25D366;
+    color:white;
+    font-weight:bold;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+<h2>✅ Order Received</h2>
+<p>We will contact you shortly.</p>
+
+<!-- WhatsApp -->
+<a id="waLink" target="_blank">
+<button class="wa">📲 Chat on WhatsApp</button>
+</a>
+
+<hr>
+
+<!-- Notify -->
+<div id="notifyBox">
+
+<h3>🔔 Get notified when stock is available</h3>
+
+<input id="nname" placeholder="Your Name">
+<input id="nphone" placeholder="Phone Number">
+
+<button onclick="notifyMe()" class="primary">
+Notify Me
+</button>
+
+</div>
+
+</div>
+
+<script>
+
+/* ================= WHATSAPP ================= */
+let phone = "254705911642";
+
+let msg = "Hello, I placed an order on Vegas Connect. Please assist me.";
+
+document.getElementById("waLink").href =
+"https://wa.me/" + phone + "?text=" + encodeURIComponent(msg);
+
+/* ================= NOTIFY FIX ================= */
+function notifyMe(){
+
+    const nameInput = document.getElementById("nname");
+    const phoneInput = document.getElementById("nphone");
+    const box = document.getElementById("notifyBox");
+
+    const name = nameInput.value.trim();
+    const phone = phoneInput.value.trim();
+
+    if(!name || !phone){
+        alert("Fill all fields");
+        return;
+    }
+
+    fetch("/notify",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ name, phone })
+    })
+    .then(r => r.json())
+    .then(() => {
+
+        box.innerHTML = `
+            <div style="background:#28a745;padding:15px;border-radius:10px;">
+                ✅ Done! We will notify you when stock is available
+            </div>
+        `;
+
+    })
+    .catch(err => {
+        console.log(err);
+        alert("Error sending request");
+    });
+}
+
+</script>
+
+</body>
+</html>

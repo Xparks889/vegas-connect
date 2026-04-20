@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Admin Panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+    font-family:Arial;
+    background:#111;
+    color:white;
+    text-align:center;
+}
+
+.card{
+    background:#222;
+    padding:15px;
+    margin:15px auto;
+    max-width:400px;
+    border-radius:10px;
+}
+
+button{
+    padding:12px;
+    margin-top:10px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+}
+
+.wa{
+    background:#25D366;
+    color:white;
+}
+
+.restock{
+    background:#ff2d2d;
+    color:white;
+}
+</style>
+</head>
+
+<body>
+
+<h2>🔥 Vegas Admin Panel</h2>
+
+<!-- RESTOCK -->
+<div class="card">
+    <h3>Update Stock</h3>
+    <input id="stockInput" type="number" placeholder="Enter stock">
+    <button class="restock" onclick="updateStock()">Update Stock</button>
+</div>
+
+<!-- ORDERS -->
+<h3>🛒 Orders</h3>
+<div id="orders"></div>
+
+<!-- NOTIFICATIONS -->
+<h3>🔔 Notification Requests</h3>
+
+<button class="wa" onclick="notifyAll()">
+📲 Notify All Users
+</button>
+
+<div id="notifications"></div>
+
+<script>
+
+/* ================= GLOBAL ================= */
+let notifyList = [];
+
+/* ================= FORMAT PHONE ================= */
+function formatPhone(phone){
+    phone = phone.trim();
+
+    if(phone.startsWith("+")) phone = phone.slice(1);
+    if(phone.startsWith("254")) return phone;
+    if(phone.startsWith("0")) return "254" + phone.slice(1);
+
+    return phone;
+}
+
+/* ================= LOAD ORDERS ================= */
+function loadOrders(){
+    fetch("/admin/orders")
+    .then(r => r.json())
+    .then(rows => {
+
+        let html = "";
+
+        rows.forEach(row => {
+
+            // skip bad data
+            if(!row.name || !row.phone || !row.location) return;
+
+            html += `
+            <div class="card">
+                <b>${row.name}</b><br>
+                ${row.phone}<br>
+                Location: ${row.location}<br>
+                Qty: ${row.quantity}
+            </div>
+            `;
+        });
+
+        document.getElementById("orders").innerHTML = html;
+    });
+}
+
+/* ================= LOAD NOTIFICATIONS ================= */
+function loadNotifications(){
+    fetch("/admin/notifications")
+    .then(r => r.json())
+    .then(rows => {
+
+        notifyList = rows;
+
+        let html = "";
+
+        rows.forEach(row => {
+
+            if(!row.name || !row.phone) return;
+
+            html += `
+            <div class="card">
+                <b>${row.name}</b><br>
+                ${row.phone}
+            </div>
+            `;
+        });
+
+        document.getElementById("notifications").innerHTML = html;
+    });
+}
+
+/* ================= NOTIFY ALL ================= */
+function notifyAll(){
+
+    if(notifyList.length === 0){
+        alert("No users to notify");
+        return;
+    }
+
+    let msg = `Hello,
+Stock is now available on Vegas Connect.
+
+Order now before it runs out!`;
+
+    notifyList.forEach((user, index) => {
+
+        if(!user.phone) return;
+
+        let phone = formatPhone(user.phone);
+
+        setTimeout(() => {
+            window.open(
+                "https://wa.me/" + phone +
+                "?text=" + encodeURIComponent(msg),
+                "_blank"
+            );
+        }, index * 500);
+    });
+}
+
+/* ================= RESTOCK ================= */
+function updateStock(){
+
+    let qty = document.getElementById("stockInput").value;
+
+    if(!qty){
+        alert("Enter stock value");
+        return;
+    }
+
+    fetch("/restock",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ quantity: qty })
+    })
+    .then(() => {
+        alert("Stock updated");
+
+        // reload data
+        loadOrders();
+        loadNotifications();
+    });
+}
+
+/* ================= INIT ================= */
+loadOrders();
+loadNotifications();
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Place Order</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+    font-family: Arial;
+    background: #0f0f0f;
+    color: white;
+    text-align: center;
+}
+
+.card{
+    background: #1e1e1e;
+    padding: 20px;
+    margin: 20px auto;
+    max-width: 450px;
+    border-radius: 12px;
+}
+
+input, button{
+    width: 100%;
+    padding: 12px;
+    margin: 6px 0;
+    border-radius: 8px;
+    border: none;
+}
+
+.primary{
+    background: linear-gradient(90deg,#ff2d2d,#ff7a00);
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.primary:disabled{
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.step{
+    display: none;
+}
+
+.highlight{
+    background: #ff2d2d;
+    padding: 12px;
+    border-radius: 10px;
+}
+
+#stockText{
+    font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+<h2>🔥 Place Order</h2>
+
+<p id="stockText">Loading stock...</p>
+
+<input id="qty" type="number" placeholder="Quantity">
+<input id="name" type="text" placeholder="Full Name">
+<input id="phone" type="text" placeholder="Phone Number">
+<input id="location" type="text" placeholder="Location">
+
+<p>Total: <span id="total">0</span></p>
+<p>Deposit: <span id="deposit">0</span></p>
+
+<button id="proceedBtn" class="primary" onclick="confirmOrder()">
+Proceed to Payment
+</button>
+
+<!-- PAYMENT STEP -->
+<div id="paymentStep" class="step">
+
+    <div class="highlight">
+        SEND DEPOSIT TO<br>
+        <b>0705911642 (Mr Vegas)</b>
+    </div>
+
+    <button class="primary" onclick="showProof()">
+        I Have Paid
+    </button>
+</div>
+
+<!-- PROOF STEP -->
+<div id="proofStep" class="step">
+
+    <input id="code" type="text" placeholder="M-Pesa Code">
+
+    <button class="primary" onclick="submitOrder()">
+        Submit Order
+    </button>
+</div>
+
+</div>
+
+<script>
+
+let stock = 0;
+let loadingStock = true;
+
+const price = 25;
+const rate = 0.3;
+
+function el(id){
+    return document.getElementById(id);
+}
+
+/* ================= LOAD STOCK ================= */
+fetch("/stock")
+.then(r => r.json())
+.then(d => {
+
+    stock = Number(d.quantity || 0);
+    loadingStock = false;
+
+    const stockText = el("stockText");
+
+    if(stock <= 0){
+        stockText.innerText = "❌ OUT OF STOCK";
+        stockText.style.color = "red";
+    } else {
+        stockText.innerText = "Available Stock: " + stock;
+        stockText.style.color = "lime";
+    }
+})
+.catch(err => {
+    loadingStock = false;
+    console.log(err);
+});
+
+/* ================= CALC ================= */
+window.onload = function(){
+
+    const qty = el("qty");
+
+    qty.addEventListener("input", () => {
+
+        let q = Number(qty.value || 0);
+
+        el("total").innerText = q * price;
+        el("deposit").innerText = Math.ceil(q * price * rate);
+    });
+};
+
+/* ================= MAIN BUTTON ================= */
+function confirmOrder(){
+
+    const q = Number(el("qty").value);
+    const n = el("name").value.trim();
+    const p = el("phone").value.trim();
+    const l = el("location").value.trim();
+
+    const paymentStep = el("paymentStep");
+    const btn = el("proceedBtn");
+
+    if(loadingStock){
+        alert("Stock loading, please wait...");
+        return;
+    }
+
+    if(stock <= 0){
+        alert("❌ Out of stock");
+        return;
+    }
+
+    if(!q || !n || !p || !l){
+        alert("Fill all details");
+        return;
+    }
+
+    if(q <= 0){
+        alert("Invalid quantity");
+        return;
+    }
+
+    if(q > stock){
+        alert("Only " + stock + " available");
+        return;
+    }
+
+    // prevent double clicks
+    btn.disabled = true;
+
+    paymentStep.style.display = "block";
+}
+
+/* ================= PAYMENT STEP ================= */
+function showProof(){
+
+    const proofStep = el("proofStep");
+
+    proofStep.style.display = "block";
+}
+
+/* ================= SUBMIT ORDER ================= */
+function submitOrder(){
+
+    const code = el("code").value.trim();
+
+    if(!code){
+        alert("Enter M-Pesa code");
+        return;
+    }
+
+    fetch("/order", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            name: el("name").value,
+            phone: el("phone").value,
+            location: el("location").value,
+            quantity: el("qty").value,
+            total: el("total").innerText,
+            deposit: el("deposit").innerText,
+            mpesa_code: code
+        })
+    })
+    .then(r => r.json())
+    .then(d => {
+
+        if(d.success){
+            window.location.href = "thankyou.html";
+        } else {
+            alert(d.message || "Order failed");
+        }
+    })
+    .catch(err => {
+        alert("Network error");
+        console.log(err);
+    });
+}
+
+</script>
+
+</body>
+</html>

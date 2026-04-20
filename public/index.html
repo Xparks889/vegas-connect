@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Vegas Connect</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+    margin:0;
+    font-family:Arial;
+    background:linear-gradient(180deg,#000,#111);
+    color:white;
+    text-align:center;
+}
+
+.hero{
+    padding:60px 20px;
+}
+
+.hero h1{
+    font-size:40px;
+    color:#ff2d2d;
+}
+
+.card{
+    background:#1e1e1e;
+    padding:20px;
+    margin:20px auto;
+    max-width:420px;
+    border-radius:12px;
+}
+
+button{
+    width:100%;
+    padding:14px;
+    border:none;
+    border-radius:10px;
+    background:linear-gradient(90deg,#ff2d2d,#ff7a00);
+    color:white;
+    font-weight:bold;
+    cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div class="hero">
+    <h1>🔥 Vegas Connect</h1>
+    <p>Fast Airtel Lines Delivery</p>
+</div>
+
+<div class="card">
+
+<p>Available Stock</p>
+<h2 id="stock">Loading...</h2>
+
+<button onclick="goOrder()">Order Now</button>
+
+</div>
+
+<script>
+fetch("/stock")
+.then(r=>r.json())
+.then(d=>{
+    stock.innerText = d.quantity;
+});
+
+function goOrder(){
+    window.location.href = "order.html"; // 🔥 FIXED NAVIGATION
+}
+</script>
+
+</body>
+</html>
