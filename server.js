@@ -115,7 +115,7 @@ Total: ${total}
 Deposit: ${deposit}
 Code: ${mpesa_code}
 
-🌐 Site: https://YOUR-RENDER-LINK.onrender.com`
+🌐 Site: https://vegas-connect-1.onrender.com/
     );
 
     res.json({ success: true });
@@ -140,7 +140,7 @@ app.post("/notify", (req, res) => {
 Name: ${name}
 Phone: ${phone}
 
-🌐 Website: https://YOUR-RENDER-LINK.onrender.com
+🌐 Website: https://vegas-connect-1.onrender.com/
 📦 Stock notification request`
     );
 
