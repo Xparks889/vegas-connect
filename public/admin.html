@@ -90,7 +90,6 @@ function loadOrders(){
 
         rows.forEach(row => {
 
-            // skip bad data
             if(!row.name || !row.phone || !row.location) return;
 
             html += `
@@ -133,33 +132,50 @@ function loadNotifications(){
     });
 }
 
-/* ================= NOTIFY ALL ================= */
+/* ================= NOTIFY ALL (FIXED FULL SCRIPT) ================= */
 function notifyAll(){
 
-    if(notifyList.length === 0){
+    if(!notifyList || notifyList.length === 0){
         alert("No users to notify");
         return;
     }
 
-    let msg = `Hello,
+    const site = "https://vegas-connect-1.onrender.com";
+
+    // ✅ CLEAN WhatsApp-friendly message
+    const message = `Hello,
+
 Stock is now available on Vegas Connect.
 
-Order now before it runs out!`;
+Order here:
+${site}
 
-    notifyList.forEach((user, index) => {
+Click the link above to place your order.`;
 
-        if(!user.phone) return;
+    // format and clean numbers
+    let phones = notifyList
+        .map(user => user.phone ? formatPhone(user.phone) : null)
+        .filter(p => p && p.length > 8);
 
-        let phone = formatPhone(user.phone);
+    if(phones.length === 0){
+        alert("No valid numbers found");
+        return;
+    }
+
+    // OPTIONAL: open ALL chats one by one (safe delay)
+    phones.forEach((phone, index) => {
 
         setTimeout(() => {
-            window.open(
-                "https://wa.me/" + phone +
-                "?text=" + encodeURIComponent(msg),
-                "_blank"
-            );
-        }, index * 500);
+
+            const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+
+            window.open(url, "_blank");
+
+        }, index * 1200); // delay to avoid blocking popup
+
     });
+
+    alert("WhatsApp messages opened for all users");
 }
 
 /* ================= RESTOCK ================= */
@@ -179,8 +195,6 @@ function updateStock(){
     })
     .then(() => {
         alert("Stock updated");
-
-        // reload data
         loadOrders();
         loadNotifications();
     });

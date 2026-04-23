@@ -1,15 +1,14 @@
 const express = require("express");
-const Database = require("better-sqlite3");
-const bodyParser = require("body-parser");
+const { Pool } = require("pg");
 const cors = require("cors");
 const path = require("path");
 
 const app = express();
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-/* ================= STATIC FILES ================= */
+/* ================= STATIC ================= */
 const PUBLIC_DIR = path.join(__dirname, "public");
 app.use(express.static(PUBLIC_DIR));
 
@@ -33,78 +32,100 @@ async function sendTelegram(message){
 }
 
 /* ================= DATABASE ================= */
-const db = new Database("database.db");
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
 
-/* ================= TABLES ================= */
-db.prepare(`
-CREATE TABLE IF NOT EXISTS stock (
-    id INTEGER PRIMARY KEY,
-    quantity INTEGER
-)
-`).run();
+/* ================= INIT DB ================= */
+async function initDB(){
+    try {
 
-db.prepare(`
-CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    phone TEXT,
-    location TEXT,
-    quantity INTEGER,
-    total INTEGER,
-    deposit INTEGER,
-    mpesa_code TEXT
-)
-`).run();
+        await pool.query(`
+        CREATE TABLE IF NOT EXISTS stock (
+            id INTEGER PRIMARY KEY,
+            quantity INTEGER
+        )`);
 
-db.prepare(`
-CREATE TABLE IF NOT EXISTS notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    phone TEXT
-)
-`).run();
+        await pool.query(`
+        CREATE TABLE IF NOT EXISTS orders (
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            phone TEXT,
+            location TEXT,
+            quantity INTEGER,
+            total INTEGER,
+            deposit INTEGER,
+            mpesa_code TEXT
+        )`);
 
-/* ================= INIT STOCK ================= */
-const stockRow = db.prepare("SELECT * FROM stock WHERE id=1").get();
-if (!stockRow) {
-    db.prepare("INSERT INTO stock (id, quantity) VALUES (1, 100)").run();
+        await pool.query(`
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            phone TEXT
+        )`);
+
+        const res = await pool.query("SELECT * FROM stock WHERE id=1");
+
+        if(res.rows.length === 0){
+            await pool.query("INSERT INTO stock (id, quantity) VALUES (1, 0)");
+        }
+
+        console.log("✅ Database ready");
+
+    } catch (err) {
+        console.log("DB init error:", err.message);
+    }
 }
 
+initDB();
+
 /* ================= STOCK ================= */
-app.get("/stock", (req, res) => {
-    const row = db.prepare("SELECT quantity FROM stock WHERE id=1").get();
-    res.json(row || { quantity: 0 });
+app.get("/stock", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT quantity FROM stock WHERE id=1");
+        res.json(result.rows[0] || { quantity: 0 });
+    } catch {
+        res.json({ quantity: 0 });
+    }
 });
 
 /* ================= ORDER ================= */
-app.post("/order", (req, res) => {
+app.post("/order", async (req, res) => {
 
-    const { name, phone, location, quantity, total, deposit, mpesa_code } = req.body;
+    try {
 
-    if(!name || !phone || !location || !quantity){
-        return res.json({ success:false, message:"Fill all details" });
-    }
+        const { name, phone, location, quantity, total, deposit, mpesa_code } = req.body;
 
-    const row = db.prepare("SELECT quantity FROM stock WHERE id=1").get();
-    let stock = row ? row.quantity : 0;
-    let qty = Number(quantity);
+        if(!name || !phone || !location || !quantity){
+            return res.json({ success:false, message:"Fill all details" });
+        }
 
-    if (stock <= 0) {
-        return res.json({ success: false, message: "Out of stock" });
-    }
+        const stockRow = await pool.query("SELECT quantity FROM stock WHERE id=1");
+        let stock = stockRow.rows[0].quantity;
+        let qty = Number(quantity);
 
-    if (stock < qty) {
-        return res.json({ success: false, message: "Not enough stock" });
-    }
+        if(stock <= 0){
+            return res.json({ success:false, message:"Out of stock" });
+        }
 
-    db.prepare(`
-        INSERT INTO orders (name, phone, location, quantity, total, deposit, mpesa_code)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(name, phone, location, qty, total, deposit, mpesa_code);
+        if(stock < qty){
+            return res.json({ success:false, message:"Not enough stock" });
+        }
 
-    db.prepare("UPDATE stock SET quantity = quantity - ? WHERE id=1").run(qty);
+        await pool.query(
+            `INSERT INTO orders (name, phone, location, quantity, total, deposit, mpesa_code)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [name, phone, location, qty, total, deposit, mpesa_code]
+        );
 
-    sendTelegram(
+        await pool.query(
+            "UPDATE stock SET quantity = quantity - $1 WHERE id=1",
+            [qty]
+        );
+
+        await sendTelegram(
 `🛒 NEW ORDER
 
 Name: ${name}
@@ -115,36 +136,48 @@ Total: ${total}
 Deposit: ${deposit}
 Code: ${mpesa_code}
 
-🌐 Site: https://vegas-connect-1.onrender.com/
-    );
+🌐 https://vegas-connect-1.onrender.com`
+        );
 
-    res.json({ success: true });
+        res.json({ success:true });
+
+    } catch (err) {
+        console.log("ORDER ERROR:", err.message);
+        res.json({ success:false });
+    }
 });
 
 /* ================= NOTIFY ================= */
-app.post("/notify", (req, res) => {
+app.post("/notify", async (req, res) => {
 
-    const { name, phone } = req.body;
+    try {
 
-    if(!name || !phone){
-        return res.json({ success:false });
-    }
+        const { name, phone } = req.body;
 
-    db.prepare(
-        "INSERT INTO notifications (name, phone) VALUES (?, ?)"
-    ).run(name, phone);
+        if(!name || !phone){
+            return res.json({ success:false });
+        }
 
-    sendTelegram(
+        await pool.query(
+            "INSERT INTO notifications (name, phone) VALUES ($1,$2)",
+            [name, phone]
+        );
+
+        await sendTelegram(
 `🔔 NEW NOTIFY REQUEST
 
 Name: ${name}
 Phone: ${phone}
 
-🌐 Website: https://vegas-connect-1.onrender.com/
-📦 Stock notification request`
-    );
+🌐 https://vegas-connect-1.onrender.com`
+        );
 
-    res.json({ success: true });
+        res.json({ success:true });
+
+    } catch (err) {
+        console.log("NOTIFY ERROR:", err.message);
+        res.json({ success:false });
+    }
 });
 
 /* ================= ADMIN ================= */
@@ -153,26 +186,44 @@ app.get("/admin", (req, res) => {
 });
 
 /* ================= ADMIN DATA ================= */
-app.get("/admin/orders", (req, res) => {
-    const rows = db.prepare("SELECT * FROM orders ORDER BY id DESC").all();
-    res.json(rows || []);
+app.get("/admin/orders", async (req, res) => {
+    try {
+        const rows = await pool.query("SELECT * FROM orders ORDER BY id DESC");
+        res.json(rows.rows || []);
+    } catch {
+        res.json([]);
+    }
 });
 
-app.get("/admin/notifications", (req, res) => {
-    const rows = db.prepare("SELECT * FROM notifications ORDER BY id DESC").all();
-    res.json(rows || []);
+app.get("/admin/notifications", async (req, res) => {
+    try {
+        const rows = await pool.query("SELECT * FROM notifications ORDER BY id DESC");
+        res.json(rows.rows || []);
+    } catch {
+        res.json([]);
+    }
 });
 
 /* ================= RESTOCK ================= */
-app.post("/restock", (req, res) => {
+app.post("/restock", async (req, res) => {
 
-    const { quantity } = req.body;
+    try {
 
-    db.prepare("UPDATE stock SET quantity = ? WHERE id=1").run(quantity);
+        const { quantity } = req.body;
 
-    sendTelegram(`📦 STOCK UPDATED → New Stock: ${quantity}`);
+        await pool.query(
+            "UPDATE stock SET quantity = $1 WHERE id=1",
+            [quantity]
+        );
 
-    res.json({ success: true });
+        await sendTelegram(`📦 STOCK UPDATED → ${quantity}`);
+
+        res.json({ success:true });
+
+    } catch (err) {
+        console.log("RESTOCK ERROR:", err.message);
+        res.json({ success:false });
+    }
 });
 
 /* ================= START ================= */
